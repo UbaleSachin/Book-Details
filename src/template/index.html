@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Book Search Form</title>
+    <link rel="stylesheet" href="../static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📚 Interactive Book Search</h1>
+            <p>Find your favorite books across multiple platforms</p>
+        </header>
+
+        <div class="search-card">
+            <form id="bookForm">
+                <div class="form-group">
+                    <label for="bookName">
+                        <span class="label-icon">📖</span>
+                        Book Name:
+                    </label>
+                    <input type="text" id="bookName" name="bookName" placeholder="Enter book title...">
+                    <div class="input-focus-line"></div>
+                </div>
+
+                <div class="form-group">
+                    <label for="isbn">
+                        <span class="label-icon">🔢</span>
+                        ISBN:
+                    </label>
+                    <input type="text" id="isbn" name="isbn" placeholder="Enter ISBN number...">
+                    <div class="input-focus-line"></div>
+                </div>
+
+                <div class="form-group">
+                    <label for="author">
+                        <span class="label-icon">✍️</span>
+                        Author Name:
+                    </label>
+                    <input type="text" id="author" name="author" placeholder="Enter author name...">
+                    <div class="input-focus-line"></div>
+                </div>
+
+                <div class="form-group">
+                    <label for="site">
+                        <span class="label-icon">🌐</span>
+                        Select Platform:
+                    </label>
+                    <div class="select-wrapper">
+                        <select id="site" name="site">
+                            <option value="">Choose a platform...</option>
+                            <option value="amazon">🛒 Amazon</option>
+                            <option value="goodreads">⭐ Goodreads</option>
+                            <option value="library">📚 Library</option>
+                            <option value="bookdepository">🌍 Book Depository</option>
+                            <option value="openlibrary">🔓 Open Library</option>
+                            <option value="barnesandnoble">📖 Barnes & Noble</option>
+                        </select>
+                    </div>
+                </div>
+
+                <button type="submit" id="searchBtn" class="search-btn">
+                    <span class="btn-text">Search Books</span>
+                    <span class="btn-icon">🔍</span>
+                </button>
+            </form>
+        </div>
+
+        <div id="loadingIndicator" class="loading hidden">
+            <div class="spinner"></div>
+            <p>Searching for books...</p>
+        </div>
+
+        <div id="results" class="results hidden">
+            <h3>Search Results</h3>
+            <div id="resultsContent"></div>
+        </div>
+
+        <div id="recentSearches" class="recent-searches">
+            <h3>Recent Searches</h3>
+            <div id="recentList" class="recent-list">
+                <p class="no-searches">No recent searches yet</p>
+            </div>
+            <button id="clearHistory" class="clear-btn hidden">Clear History</button>
+        </div>
+    </div>
+
+    <script src="../static/scripts.js"></script>
+</body>
+</html>
