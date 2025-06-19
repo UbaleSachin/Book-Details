@@ -347,7 +347,7 @@ class BarnesNobleBookScraper:
             return
         
         df = pd.DataFrame(data)
-        df["Date_Scraped"] = pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')
+        #df["Date_Scraped"] = pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')
         
         try:
             df.to_excel(filename, index=False)
@@ -374,7 +374,7 @@ class BarnesNobleBookScraper:
             return
         
         df = pd.DataFrame(data)
-        df["Date_Scraped"] = pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')
+        #df["Date_Scraped"] = pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')
         
         try:
             df.to_csv(filename, index=False)

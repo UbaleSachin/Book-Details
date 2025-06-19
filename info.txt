@@ -1,0 +1,20 @@
+| Site                   | URL                                                                  | Notes                                                                 |
+| ---------------------- | -------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| **Amazon**             | [https://www.amazon.com](https://www.amazon.com)                     | Requires user-agent spoofing; region-based (e.g., .co.uk, .in, etc.). |
+| **Barnes & Noble**     | [https://www.barnesandnoble.com](https://www.barnesandnoble.com)     | Good structure, can search by title/ISBN.                             |
+| **Books-A-Million**    | [https://www.booksamillion.com](https://www.booksamillion.com)       | Searchable by ISBN; prices are visible.                               |
+| **ThriftBooks**        | [https://www.thriftbooks.com](https://www.thriftbooks.com)           | Searchable; shows condition-based prices (new/used).                  |
+| **Book Depository**    | [https://www.bookdepository.com](https://www.bookdepository.com)     | International; shutting down soon (as of 2025, check status).         |
+| **Better World Books** | [https://www.betterworldbooks.com](https://www.betterworldbooks.com) | Public search works well; often includes used options.                |
+| **Google Books**       | [https://books.google.com](https://books.google.com)                 | Limited pricing unless connected to store preview.                    |
+| Site                | URL                                                | Notes                                                     |
+| ------------------- | -------------------------------------------------- | --------------------------------------------------------- |
+| **Kobo**            | [https://www.kobo.com](https://www.kobo.com)       | Prices shown, but region/currency may vary.               |
+| **Scribd**          | [https://www.scribd.com](https://www.scribd.com)   | Often subscription-based; not all books for direct sale.  |
+| **eBay (Books)**    | [https://www.ebay.com](https://www.ebay.com)       | Requires handling search results; often used books.       |
+| **Walmart (Books)** | [https://www.walmart.com](https://www.walmart.com) | Can be scraped but dynamic content; may require Selenium. |
+
+
+
+
+# Fileds : Book name, auther, ISBN code, hardcover, paperback, ebook, site url, site name.

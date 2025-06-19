@@ -5,6 +5,7 @@ from datetime import datetime
 import logging
 from src.book_sites.open_library import BookScraper
 from src.book_sites.barnes_and_noble import BarnesNobleBookScraper
+from src.book_sites.thriftbooks import ThriftBooksBookScraper
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -17,6 +18,7 @@ CORS(app)
 # Initialize the book scraper
 scraper = BookScraper()
 barnes_noble_scraper = BarnesNobleBookScraper()
+thrift_books_scraper = ThriftBooksBookScraper()
 
 # Store search results temporarily (in production, use a proper database)
 search_cache = {}
@@ -46,7 +48,7 @@ def search_books():
         book_name = data.get('bookName', '').strip()
         isbn = data.get('isbn', '').strip()
         author = data.get('author', '').strip()
-        site = data.get('site', 'openlibrary')
+        site = data.get('site', '')
         
         # Validate input
         if not any([book_name, isbn, author]):
@@ -64,23 +66,15 @@ def search_books():
         # Perform search based on selected site
         results = []
         
-        if site in ['openlibrary', 'library']:
+        if site == 'openlibrary':
             results = scraper.search_open_library(search_query, max_results=1)
-        elif site == 'amazon':
-            # Placeholder for Amazon search (would need Amazon API integration)
-            results = search_amazon_placeholder(search_query, book_name, author, isbn)
-        elif site == 'goodreads':
-            # Placeholder for Goodreads search (would need Goodreads API integration)
-            results = search_goodreads_placeholder(search_query, book_name, author, isbn)
-        elif site == 'bookdepository':
-            # Placeholder for Book Depository search
-            results = search_bookdepository_placeholder(search_query, book_name, author, isbn)
         elif site == 'barnesandnoble':
-            # Placeholder for Barnes & Noble search (would need Barnes & Noble API integration)
             results = barnes_noble_scraper.search_barnes_noble(search_query, max_results=1)
+        elif site == 'thriftbooks':
+            results = thrift_books_scraper.search_thriftbooks(search_query, max_results=1)
         else:
-            # Default to Open Library
-            results = scraper.search_open_library(search_query, max_results=10)
+            # Search both Open Library and Barnes & Noble, combine results
+            results = []
         
         # Cache results with timestamp
         cache_key = f"{search_query}_{site}_{datetime.now().strftime('%Y%m%d_%H')}"
@@ -125,121 +119,21 @@ def format_results_for_frontend(results, site):
     for book in results:
         # Handle different result formats from different sources
         formatted_book = {
-            'id': book.get('ID', f"{book.get('Title', 'Unknown')}_{book.get('Author', 'Unknown')}"),
             'title': book.get('Title', 'Unknown Title'),
             'author': book.get('Author', 'Unknown Author'),
             'isbn': book.get('ISBN', 'N/A'),
             'publisher': book.get('Publisher', 'Unknown Publisher'),
             'publish_date': book.get('Publication_Year', 'Unknown'),
-            'pages': book.get('Pages', 'N/A'),
-            'language': book.get('Language', 'Unknown'),
-            'subjects': book.get('Subjects', []),
-            'cover_url': book.get('Cover URL', ''),
-            'openlibrary_url': book.get('OpenLibrary URL', ''),
-            'site': site,
             'price': book.get('Price', ''),  
-            'availability': 'Available',  
-            'rating': generate_mock_rating(),
-            'format': book.get('Format', '')
+            'format': book.get('Format', ''),
+            'site': site,
+            'url': book.get('URL', ''),
+
         }
         formatted.append(formatted_book)
     
     return formatted
 
-def generate_mock_price():
-    """Generate mock price for demonstration"""
-    import random
-    return f"${random.randint(10, 50)}.{random.randint(10, 99)}"
-
-def generate_mock_rating():
-    """Generate mock rating for demonstration"""
-    import random
-    return round(random.uniform(3.5, 5.0), 1)
-
-def search_amazon_placeholder(query, book_name, author, isbn):
-    """Placeholder for Amazon search - to be implemented with actual Amazon API"""
-    return [{
-        'Title': f'{book_name or query} (Amazon)',
-        'Author': author or 'Various Authors',
-        'ISBN': isbn or 'N/A',
-        'Publisher': 'Amazon Publishing',
-        'Publish Date': '2024',
-        'Pages': '250',
-        'Language': 'English',
-        'Subjects': ['Fiction', 'Popular'],
-        'Cover URL': '',
-        'OpenLibrary URL': 'https://amazon.com/placeholder'
-    }]
-
-def search_goodreads_placeholder(query, book_name, author, isbn):
-    """Placeholder for Goodreads search - to be implemented with actual Goodreads API"""
-    return [{
-        'Title': f'{book_name or query} (Goodreads)',
-        'Author': author or 'Popular Author',
-        'ISBN': isbn or 'N/A',
-        'Publisher': 'Goodreads Selection',
-        'Publish Date': '2024',
-        'Pages': '300',
-        'Language': 'English',
-        'Subjects': ['Highly Rated', 'Popular'],
-        'Cover URL': '',
-        'OpenLibrary URL': 'https://goodreads.com/placeholder'
-    }]
-
-def search_bookdepository_placeholder(query, book_name, author, isbn):
-    """Placeholder for Book Depository search - to be implemented with actual API"""
-    return [{
-        'Title': f'{book_name or query} (Book Depository)',
-        'Author': author or 'International Author',
-        'ISBN': isbn or 'N/A',
-        'Publisher': 'International Publisher',
-        'Publish Date': '2024',
-        'Pages': '280',
-        'Language': 'English',
-        'Subjects': ['International', 'Popular'],
-        'Cover URL': '',
-        'OpenLibrary URL': 'https://bookdepository.com/placeholder'
-    }]
-
-@app.route('/api/book/<book_id>')
-def get_book_details(book_id):
-    """Get detailed information about a specific book"""
-    try:
-        # In a real application, you would fetch detailed book information
-        # For now, return mock detailed data
-        book_details = {
-            'id': book_id,
-            'title': 'Sample Book Title',
-            'author': 'Sample Author',
-            'description': 'This is a sample book description that would contain more detailed information about the book content, plot, and other relevant details.',
-            'isbn': '9781234567890',
-            'publisher': 'Sample Publisher',
-            'publish_date': '2024',
-            'pages': 350,
-            'language': 'English',
-            'rating': 4.5,
-            'reviews_count': 1250,
-            'price': '$19.99',
-            'availability': 'In Stock',
-            'cover_url': '',
-            'purchase_links': {
-                'amazon': 'https://amazon.com/book',
-                'goodreads': 'https://goodreads.com/book',
-                'library': 'https://library.com/book'
-            }
-        }
-        
-        return jsonify({
-            'success': True,
-            'book': book_details
-        })
-        
-    except Exception as e:
-        logger.error(f"Error fetching book details: {str(e)}")
-        return jsonify({
-            'success': False,
-            'message': f'Failed to fetch book details: {str(e)}'
-        }), 500
 
 @app.route('/api/history')
 def get_search_history():
@@ -290,13 +184,11 @@ def export_results():
                 'Title': result.get('title'),
                 'Author': result.get('author'),
                 'ISBN': result.get('isbn'),
+                'Price': result.get('price'),
                 'Publisher': result.get('publisher'),
                 'Publish Date': result.get('publish_date'),
-                'Pages': result.get('pages'),
-                'Language': result.get('language'),
-                'Subjects': result.get('subjects'),
-                'Cover URL': result.get('cover_url'),
-                'OpenLibrary URL': result.get('openlibrary_url')
+                'Book URL': result.get('url')
+
             })
         
         filename = scraper.save_to_excel(scraper_format_results)
@@ -334,19 +226,18 @@ def main():
     
     # Check if the scraper is working
     try:
-        test_results = scraper.search_open_library("test", max_results=1)
         logger.info("Book scraper initialized successfully")
     except Exception as e:
         logger.warning(f"Book scraper initialization issue: {str(e)}")
     
     # Run the Flask app
     port = int(os.environ.get('PORT', 5000))
-    debug = os.environ.get('DEBUG', 'False').lower() == 'true'
+    #debug = os.environ.get('DEBUG', 'False').lower() == 'true'
     
     logger.info(f"Starting server on port {port}")
     logger.info("Access the application at: http://localhost:5000")
     
-    app.run(host='127.0.0.1', port=port, debug=debug)
+    app.run(host='127.0.0.1', port=port, debug=True)
 
 if __name__ == "__main__":
     main()

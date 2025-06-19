@@ -210,7 +210,9 @@ function showActualResults(apiResult) {
                 <span class="result-publisher">${book.publisher || 'Unknown Publisher'}</span>
                 <span class="result-year">${book.publish_date || 'year'}</span>
             </div>
-            <div class="result-platform">📚 ${book.site || 'Library'}</div>
+            <div class="result-platform">
+                📚 <a href="${book.url || '#'}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation();">${book.site}</a>
+            </div>
             <div class="result-subjects">
                 ${Array.isArray(book.subjects) ? book.subjects.slice(0, 3).map(subject => 
                     `<span class="subject-tag">${subject}</span>`
@@ -254,42 +256,6 @@ async function exportResults(books) {
     }
 }
 
-function generateMockResults(formData) {
-    const platforms = {
-        'amazon': '🛒 Amazon',
-        'goodreads': '⭐ Goodreads',
-        'library': '📚 Library',
-        'bookdepository': '🌍 Book Depository',
-        'openlibrary': '🔓 Open Library'
-    };
-    
-    const searchTerm = formData.bookName || formData.author || 'Book';
-    const platform = platforms[formData.site] || formData.site;
-    
-    return [
-        {
-            id: '1',
-            title: formData.bookName || `${searchTerm} - Volume 1`,
-            author: formData.author || 'Popular Author',
-            platform: platform,
-            price: '$12.99'
-        },
-        {
-            id: '2',
-            title: formData.bookName || `${searchTerm} - Complete Collection`,
-            author: formData.author || 'Bestselling Author',
-            platform: platform,
-            price: '$19.99'
-        },
-        {
-            id: '3',
-            title: formData.bookName || `${searchTerm} - Revised Edition`,
-            author: formData.author || 'Award-winning Author',
-            platform: platform,
-            price: '$15.99'
-        }
-    ];
-}
 
 function selectResult(resultId) {
     showSuccess(`Selected book with ID: ${resultId}. Redirecting to purchase page...`);

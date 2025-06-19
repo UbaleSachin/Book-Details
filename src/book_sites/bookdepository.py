@@ -20,12 +20,12 @@ from selenium.webdriver.chrome.options import Options
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-class ThriftBooksBookScraper:
+class BookDepositoryBookScraper:
     def __init__(self):
         self.session = requests.Session()
         self.driver = None
-        self.base_url = "https://www.thriftbooks.com"
-        self.search_url = "https://www.thriftbooks.com/browse/"
+        self.base_url = "https://www.bookdepository.com"
+        self.search_url = "https://www.amazon.com/s?k="
         self.user_agents = [
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
@@ -53,7 +53,7 @@ class ThriftBooksBookScraper:
         self.update_headers()
     
     def update_headers(self):
-        """Update headers with random user agent and ThriftBooks-specific headers"""
+        """Update headers with random user agent and BookDepository-specific headers"""
         self.headers.update({
             "User-Agent": random.choice(self.user_agents),
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
@@ -152,28 +152,28 @@ class ThriftBooksBookScraper:
                 self.driver.quit()
                 self.driver = None
 
-    def search_thriftbooks(self, book_query: str, max_results: int = 5) -> List[Dict]:
-        """Search ThriftBooks for books"""
+    def search_bookdepository(self, book_query: str, max_results: int = 5) -> List[Dict]:
+        """Search BookDepository for books"""
         try:
             # First, visit the homepage to establish session
-            logger.info("Establishing session with ThriftBooks...")
+            logger.info("Establishing session with BookDepository...")
             home_response = self.make_request_with_retry(self.base_url, timeout=15)
             if not home_response:
-                logger.error("Failed to establish session with ThriftBooks")
+                logger.error("Failed to establish session with BookDepository")
                 return []
             
             # Add a small delay
             time.sleep(random.uniform(1, 3))
             
-            # Construct search URL
-            search_url = f"{self.search_url}?b.search={quote_plus(book_query)}"
+            # Construct search URL - BookDepository uses 'searchTerm' parameter
+            search_url = f"{self.search_url}{quote_plus(book_query)}"
             
-            logger.info(f"Searching ThriftBooks for: {book_query}")
+            logger.info(f"Searching BookDepository for: {book_query}")
             logger.info(f"Search URL: {search_url}")
             
             response = self.make_request_with_retry(search_url, timeout=20)
             if not response:
-                logger.error("Failed to get search results from ThriftBooks")
+                logger.error("Failed to get search results from BookDepository")
                 return []
             
             soup = BeautifulSoup(response.content, 'html.parser')
@@ -183,14 +183,14 @@ class ThriftBooksBookScraper:
             logger.info(f"Response status: {response.status_code}")
             logger.info(f"Page title: {soup.title.string if soup.title else 'No title'}")
             
-            # Find book containers - Try multiple ThriftBooks selectors
+            # Find book containers - Try multiple BookDepository selectors
             book_containers = self.find_book_containers(soup)
             
             if not book_containers:
                 # Check if we're being blocked or redirected
                 page_text = soup.get_text().lower()
                 if any(keyword in page_text for keyword in ["access denied", "blocked", "captcha", "please verify"]):
-                    logger.error("Access appears to be blocked by ThriftBooks")
+                    logger.error("Access appears to be blocked by BookDepository")
                 else:
                     logger.warning("No book containers found. Page structure may have changed.")
                     # Print first 1000 chars of HTML for debugging
@@ -199,7 +199,7 @@ class ThriftBooksBookScraper:
             
             count = 0
             for container in book_containers[:max_results * 2]:  # Get more to account for filtering
-                book_data = self.extract_book_details_tb(container, soup)
+                book_data = self.extract_book_details_bd(container, soup)
                 if book_data and count < max_results:
                     results.append(book_data)
                     count += 1
@@ -207,28 +207,30 @@ class ThriftBooksBookScraper:
                 # Add delay between extractions
                 time.sleep(random.uniform(0.5, 1.5))
             
-            logger.info(f"Successfully extracted {len(results)} books from ThriftBooks")
+            logger.info(f"Successfully extracted {len(results)} books from BookDepository")
             return results
             
         except Exception as e:
-            logger.error(f"Error searching ThriftBooks: {str(e)}")
+            logger.error(f"Error searching BookDepository: {str(e)}")
             return []
     
     def find_book_containers(self, soup):
-        """Find book containers using multiple selector strategies"""
+        """Find book containers using multiple selector strategies for BookDepository"""
         book_containers = []
         
-        # Try different selectors in order of preference
+        # BookDepository-specific selectors
         selectors = [
-            ('div', {'class': 'SearchResultListItem'}),
-            ('div', {'class': re.compile(r'AllEditionsItem')}),
-            ('div', {'class': re.compile(r'bookItem')}),
-            ('div', {'class': re.compile(r'book-item')}),
-            ('div', {'class': re.compile(r'product-item')}),
-            ('div', {'class': re.compile(r'item.*book')}),
+            ('div', {'class': 'book-item'}),
+            ('div', {'class': re.compile(r'item-wrap')}),
+            ('div', {'class': re.compile(r'book.*item')}),
+            ('article', {'class': re.compile(r'book')}),
+            ('div', {'itemtype': 'http://schema.org/Book'}),
+            ('div', {'class': re.compile(r'search-result')}),
             ('div', {'class': re.compile(r'result.*item')}),
-            ('article', {}),
-            ('div', {'data-testid': re.compile(r'book|item')}),
+            ('div', {'class': re.compile(r'product.*item')}),
+            ('div', {'data-cy': re.compile(r'book|product')}),
+            ('li', {'class': re.compile(r'book')}),
+            ('div', {'class': re.compile(r'grid.*item')}),
         ]
         
         for tag, attrs in selectors:
@@ -239,20 +241,18 @@ class ThriftBooksBookScraper:
         
         return book_containers
     
-    def extract_book_details_tb(self, container, full_soup) -> Optional[Dict]:
-        """Extract book details from ThriftBooks search result container"""
+    def extract_book_details_bd(self, container, full_soup) -> Optional[Dict]:
+        """Extract book details from BookDepository search result container"""
         try:
             # Initialize default values
-            title = "Unknown Title"
-            author = "Unknown Author"
-            publisher = "Unknown Publisher"
-            pub_year = "Unknown"
-            isbn = "N/A"
-            price = "N/A"
-            book_url = "N/A"
-            #rating = "N/A"
-            format = "N/A"
-            #condition = "N/A"
+            title = "Unknown Title",
+            author = "Unknown Author",
+            publisher = "Unknown Publisher",
+            pub_year = "Unknown",
+            isbn = "N/A",
+            price = "N/A",
+            book_url = "N/A",
+            format = "N/A",
             
             # Extract title using multiple strategies
             title, book_url = self.extract_title_and_url(container)
@@ -263,14 +263,12 @@ class ThriftBooksBookScraper:
             # Extract price
             price = self.extract_price(container)
             
-            # Extract condition (specific to ThriftBooks)
-            condition = self.extract_condition(container)
-            
             # Extract format
             format = self.extract_format(container)
             
-            # Extract rating
-            rating = self.extract_rating(container)
+            # Extract publisher and publication year from container if available
+            publisher = self.extract_publisher(container)
+            pub_year = self.extract_publication_year(container)
             
             # If we have a book URL, try to get more details from the product page
             if book_url != "N/A" and "http" in book_url:
@@ -281,6 +279,8 @@ class ThriftBooksBookScraper:
                     isbn = detailed_info.get('isbn', isbn)
                     if format == "N/A":
                         format = detailed_info.get('format', format)
+                    if rating == "N/A":
+                        rating = detailed_info.get('rating', rating)
             
             # Clean up extracted data
             title = self.clean_text(title)
@@ -292,7 +292,7 @@ class ThriftBooksBookScraper:
                 return None
             
             return {
-                "Site": "ThriftBooks",
+                "Site": "BookDepository",
                 "Title": title,
                 "Author": author,
                 "Publisher": publisher,
@@ -304,7 +304,7 @@ class ThriftBooksBookScraper:
             }
             
         except Exception as e:
-            logger.error(f"Error extracting ThriftBooks book details: {str(e)}")
+            logger.error(f"Error extracting BookDepository book details: {str(e)}")
             return None
     
     def extract_title_and_url(self, container):
@@ -312,16 +312,18 @@ class ThriftBooksBookScraper:
         title = "Unknown Title"
         book_url = "N/A"
         
-        # Try multiple selectors for title
+        # BookDepository-specific title selectors
         title_selectors = [
-            'a.AllEditionsItem-tile-title',
-            'h3 a',
-            'h2 a', 
-            'h4 a',
+            'h3.title a',
             '.title a',
+            'h2 a',
+            'h3 a',
+            'h4 a',
             '.book-title a',
-            'a[href*="/w/"]',  # ThriftBooks book URLs contain /w/
-            'a[title]'
+            'a[title]',
+            'a[href*="/book/"]',  # BookDepository book URLs contain /book/
+            '[itemprop="name"] a',
+            '.item-title a',
         ]
         
         title_elem = None
@@ -334,7 +336,9 @@ class ThriftBooksBookScraper:
             # Fallback: find any link that looks like a book title
             links = container.find_all('a', href=True)
             for link in links:
-                if '/w/' in link.get('href', '') or link.get_text(strip=True):
+                href = link.get('href', '')
+                text = link.get_text(strip=True)
+                if ('/book/' in href or text) and len(text) > 5:
                     title_elem = link
                     break
         
@@ -350,16 +354,32 @@ class ThriftBooksBookScraper:
         """Extract author from container"""
         author = "Unknown Author"
 
-        # Try to find the specific ThriftBooks author container
-        author_elem = container.find(
-            "div",
-            class_="SearchResultListItem-bottomSpacing SearchResultListItem-subheading"
-        )
-        if author_elem:
-            author_link = author_elem.find("a", itemprop="author")
-            if author_link:
-                author = author_link.get_text(strip=True)
+        # Try to find BookDepository/Amazon-style author row
+        # Look for a row with multiple <span class="a-size-base">, possibly with "by" prefix
+        author_row = container.select_one('.a-row.a-size-base.a-color-secondary .a-row')
+        if author_row:
+            spans = author_row.find_all('span', class_='a-size-base')
+            # Filter out 'by' and ',' and 'et al.' and join the rest
+            author_names = []
+            for span in spans:
+                text = span.get_text(strip=True)
+                if text.lower() == 'by' or text == ',' or text.lower() == 'et al.':
+                    continue
+                author_names.append(text)
+            if author_names:
+                author = ', '.join(author_names)
                 return author
+
+        # Fallback: Try to find Amazon-style bylineInfo structure
+        byline_div = container.find("div", id="bylineInfo")
+        if byline_div:
+            author_span = byline_div.find("span", class_="author")
+            if author_span:
+                author_link = author_span.find("a")
+                if author_link:
+                    author = author_link.get_text(strip=True)
+                    if author and author.lower() != 'unknown':
+                        return author
 
         return author
     
@@ -367,55 +387,45 @@ class ThriftBooksBookScraper:
         """Extract price from container"""
         price = "N/A"
         
+        # BookDepository-specific price selectors
         price_selectors = [
-            '.SearchResultListItem-price',
             '.price',
             '[class*="price"]',
-            '[class*="cost"]'
+            '.cost',
+            '[class*="cost"]',
+            '[itemprop="price"]',
+            '.book-price',
+            '.item-price',
         ]
         
         for selector in price_selectors:
             price_elem = container.select_one(selector)
             if price_elem:
                 price_text = price_elem.get_text(strip=True)
-                # Extract price using regex
-                price_match = re.search(r'\$[\d.]+', price_text)
+                # Extract price using regex - handle different currencies
+                price_match = re.search(r'[£$€¥]\s*[\d.,]+', price_text)
                 if price_match:
                     price = price_match.group()
                     break
-                elif price_text:
+                elif price_text and any(char in price_text for char in ['£', '$', '€', '¥']):
                     price = price_text
                     break
         
         return price
     
-    def extract_condition(self, container):
-        """Extract condition from container"""
-        condition = "N/A"
-        
-        condition_selectors = [
-            '[class*="condition"]',
-            '.condition'
-        ]
-        
-        for selector in condition_selectors:
-            condition_elem = container.select_one(selector)
-            if condition_elem:
-                condition = condition_elem.get_text(strip=True)
-                if condition:
-                    break
-        
-        return condition
-    
     def extract_format(self, container):
         """Extract format from container"""
         format = "N/A"
         
+        # BookDepository-specific format selectors
         format_selectors = [
-            '[class*="format"]',
-            '[class*="binding"]',
             '.format',
-            '.binding'
+            '[class*="format"]',
+            '.binding',
+            '[class*="binding"]',
+            '[itemprop="bookFormat"]',
+            '.book-format',
+            '.item-format',
         ]
         
         for selector in format_selectors:
@@ -431,11 +441,14 @@ class ThriftBooksBookScraper:
         """Extract rating from container"""
         rating = "N/A"
         
+        # BookDepository-specific rating selectors
         rating_selectors = [
-            '[class*="rating"]',
-            '[class*="stars"]',
             '.rating',
-            '.stars'
+            '[class*="rating"]',
+            '.stars',
+            '[class*="stars"]',
+            '[class*="review"]',
+            '.book-rating',
         ]
         
         for selector in rating_selectors:
@@ -453,6 +466,52 @@ class ThriftBooksBookScraper:
         
         return rating
     
+    def extract_publisher(self, container):
+        """Extract publisher from container"""
+        publisher = "Unknown Publisher"
+        
+        # BookDepository-specific publisher selectors
+        publisher_selectors = [
+            '[itemprop="publisher"]',
+            '.publisher',
+            '[class*="publisher"]',
+            '.book-publisher',
+            '.imprint',
+        ]
+        
+        for selector in publisher_selectors:
+            publisher_elem = container.select_one(selector)
+            if publisher_elem:
+                publisher = publisher_elem.get_text(strip=True)
+                if publisher:
+                    break
+        
+        return publisher
+    
+    def extract_publication_year(self, container):
+        """Extract publication year from container"""
+        pub_year = "Unknown"
+        
+        # BookDepository-specific publication date selectors
+        pub_selectors = [
+            '[itemprop="datePublished"]',
+            '.publication-date',
+            '.pub-date',
+            '[class*="date"]',
+            '.published',
+        ]
+        
+        for selector in pub_selectors:
+            pub_elem = container.select_one(selector)
+            if pub_elem:
+                pub_text = pub_elem.get_text(strip=True)
+                year_match = re.search(r'\b(19|20)\d{2}\b', pub_text)
+                if year_match:
+                    pub_year = year_match.group()
+                    break
+        
+        return pub_year
+    
     def get_book_details_from_page(self, book_url: str) -> Optional[Dict]:
         """Get additional book details from individual product page"""
         try:
@@ -463,72 +522,105 @@ class ThriftBooksBookScraper:
             soup = BeautifulSoup(response.content, 'html.parser')
             details = {}
 
-            # Look for new ThriftBooks details section
-            edition_info = soup.find('div', class_='WorkMeta-EditionInfoContainer')
-            if edition_info:
-                details_rows = edition_info.select('.WorkMeta-detailsRow')
-                for row in details_rows:
-                    # Check for ISBN13 using the specific span
-                    isbn13_title = row.find('span', class_='WorkMeta-detail WorkMeta-detailTitle')
-                    if isbn13_title and isbn13_title.get_text(strip=True).lower() == 'isbn13:':
-                        isbn13_value = row.find('span', class_='WorkMeta-detail WorkMeta-detailValue')
-                        if isbn13_value:
-                            details['isbn'] = isbn13_value.get_text(strip=True)
-                    title_elem = row.select_one('.WorkMeta-detailTitle')
-                    value_elem = row.select_one('.WorkMeta-detailValue')
-                    if not title_elem or not value_elem:
+            # Try to extract details from Amazon-style detail bullets
+            detail_div = soup.find('div', id='detailBullets_feature_div')
+            if detail_div:
+                items = detail_div.select('ul.a-unordered-list > li')
+                for item in items:
+                    label_elem = item.find('span', class_='a-text-bold')
+                    value_elem = label_elem.find_next_sibling('span') if label_elem else None
+                    if not label_elem or not value_elem:
                         continue
-                    key = title_elem.get_text(strip=True).lower()
-                    value = value_elem.get_text(strip=True)
-                    if 'publisher' in key:
+                    label = label_elem.get_text(separator=' ', strip=True).replace(':', '').strip().lower()
+                    value = value_elem.get_text(separator=' ', strip=True)
+                    if 'publisher' in label:
                         details['publisher'] = value
-                    elif 'release date' in key or 'published' in key:
+                    elif 'publication date' in label:
+                        # Try to extract year
                         year_match = re.search(r'\b(19|20)\d{2}\b', value)
                         if year_match:
                             details['pub_year'] = year_match.group()
-                    elif key == 'isbn13:' and value:
+                        else:
+                            details['pub_year'] = value
+                    elif 'isbn-13' in label:
                         details['isbn'] = value
-                    elif key == 'isbn' and value and 'isbn' not in details:
+                    elif 'isbn-10' in label and 'isbn' not in details:
                         details['isbn'] = value
-                    elif 'format' in key or 'binding' in key:
+                    elif 'format' in label:
                         details['format'] = value
 
-            # Fallback to previous logic if needed
-            if not details:
-                # Look for book details section
-                details_section = soup.find('div', class_=re.compile(r'book-details|product-details'))
-                if details_section:
-                    for dt in details_section.find_all('dt'):
-                        dt_text = dt.get_text(strip=True).lower()
-                        dd = dt.find_next_sibling('dd')
-                        if dd:
-                            dd_text = dd.get_text(strip=True)
-                            if 'publisher' in dt_text:
-                                details['publisher'] = dd_text
-                            elif 'publication' in dt_text or 'published' in dt_text:
-                                year_match = re.search(r'\d{4}', dd_text)
-                                if year_match:
-                                    details['pub_year'] = year_match.group()
-                            elif 'isbn' in dt_text:
-                                isbn_match = re.search(r'[\d-]{10,17}', dd_text)
-                                if isbn_match:
-                                    details['isbn'] = isbn_match.group()
-                            elif 'format' in dt_text or 'binding' in dt_text:
-                                details['format'] = dd_text
+            # Fallback to BookDepository selectors if not found above
+            if 'isbn' not in details:
+                isbn_selectors = [
+                    '[itemprop="isbn"]',
+                    '.isbn',
+                    '[class*="isbn"]',
+                ]
+                for selector in isbn_selectors:
+                    isbn_elem = soup.select_one(selector)
+                    if isbn_elem:
+                        isbn_text = isbn_elem.get_text(strip=True)
+                        isbn_match = re.search(r'[\d-]{10,17}', isbn_text)
+                        if isbn_match:
+                            details['isbn'] = isbn_match.group()
+                            break
 
-            # Look for meta tags with book information
-            meta_tags = soup.find_all('meta', attrs={'property': re.compile(r'book:|og:')})
-            for meta in meta_tags:
-                property_name = meta.get('property', '').lower()
-                content = meta.get('content', '')
-                if 'book:author' in property_name:
-                    details['author'] = content
-                elif 'book:isbn' in property_name:
-                    details['isbn'] = content
-                elif 'book:release_date' in property_name:
-                    year_match = re.search(r'\d{4}', content)
-                    if year_match:
-                        details['pub_year'] = year_match.group()
+            if 'publisher' not in details:
+                publisher_selectors = [
+                    '[itemprop="publisher"]',
+                    '.publisher',
+                    '[class*="publisher"]',
+                ]
+                for selector in publisher_selectors:
+                    pub_elem = soup.select_one(selector)
+                    if pub_elem:
+                        details['publisher'] = pub_elem.get_text(strip=True)
+                        break
+
+            if 'pub_year' not in details:
+                date_selectors = [
+                    '[itemprop="datePublished"]',
+                    '.publication-date',
+                ]
+                for selector in date_selectors:
+                    date_elem = soup.select_one(selector)
+                    if date_elem:
+                        date_text = date_elem.get_text(strip=True)
+                        year_match = re.search(r'\b(19|20)\d{2}\b', date_text)
+                        if year_match:
+                            details['pub_year'] = year_match.group()
+                            break
+
+            if 'format' not in details:
+                format_selectors = [
+                    '[itemprop="bookFormat"]',
+                    '.format',
+                    '[class*="format"]',
+                ]
+                for selector in format_selectors:
+                    format_elem = soup.select_one(selector)
+                    if format_elem:
+                        details['format'] = format_elem.get_text(strip=True)
+                        break
+
+            # Look for rating
+            rating_selectors = [
+                '.rating',
+                '[class*="rating"]',
+                '.stars',
+                '[class*="stars"]',
+            ]
+            for selector in rating_selectors:
+                rating_elem = soup.select_one(selector)
+                if rating_elem:
+                    rating_text = rating_elem.get_text(strip=True)
+                    star_match = re.search(r'(\d+\.?\d*)\s*(?:out of|/)\s*5', rating_text)
+                    if star_match:
+                        details['rating'] = f"{star_match.group(1)}/5"
+                        break
+                    elif rating_text:
+                        details['rating'] = rating_text
+                        break
 
             # Look for JSON-LD structured data
             scripts = soup.find_all('script', type='application/ld+json')
@@ -536,35 +628,23 @@ class ThriftBooksBookScraper:
                 try:
                     if script.string:
                         data = json.loads(script.string)
-                        if isinstance(data, dict):
-                            if data.get('@type') == 'Book':
-                                if 'publisher' in data:
-                                    pub_info = data['publisher']
-                                    if isinstance(pub_info, dict):
-                                        details['publisher'] = pub_info.get('name', '')
-                                    else:
-                                        details['publisher'] = str(pub_info)
-                                if 'datePublished' in data:
-                                    year_match = re.search(r'\d{4}', data['datePublished'])
-                                    if year_match:
-                                        details['pub_year'] = year_match.group()
-                                if 'isbn' in data:
-                                    details['isbn'] = data['isbn']
-                                if 'bookFormat' in data:
-                                    details['format'] = data['bookFormat']
+                        if isinstance(data, dict) and data.get('@type') == 'Book':
+                            if 'publisher' in data and 'publisher' not in details:
+                                pub_info = data['publisher']
+                                if isinstance(pub_info, dict):
+                                    details['publisher'] = pub_info.get('name', '')
+                                else:
+                                    details['publisher'] = str(pub_info)
+                            if 'datePublished' in data and 'pub_year' not in details:
+                                year_match = re.search(r'\d{4}', data['datePublished'])
+                                if year_match:
+                                    details['pub_year'] = year_match.group()
+                            if 'isbn' in data and 'isbn' not in details:
+                                details['isbn'] = data['isbn']
+                            if 'bookFormat' in data and 'format' not in details:
+                                details['format'] = data['bookFormat']
                 except (json.JSONDecodeError, AttributeError):
                     continue
-
-            # Look for publication info in specific ThriftBooks elements
-            pub_info = soup.find('div', class_=re.compile(r'publication-info'))
-            if pub_info:
-                pub_text = pub_info.get_text()
-                year_match = re.search(r'\b(19|20)\d{2}\b', pub_text)
-                if year_match:
-                    details['pub_year'] = year_match.group()
-                pub_match = re.search(r'([^,]+?)(?:,\s*\d{4})', pub_text)
-                if pub_match:
-                    details['publisher'] = pub_match.group(1).strip()
 
             return details
 
@@ -586,22 +666,21 @@ class ThriftBooksBookScraper:
         return text if text else "Unknown"
     
     def search_by_isbn(self, isbn: str) -> List[Dict]:
-        """Search ThriftBooks by ISBN"""
-        return self.search_thriftbooks(isbn, max_results=1)
+        """Search BookDepository by ISBN"""
+        return self.search_bookdepository(isbn, max_results=1)
     
     def search_by_title_author(self, title: str, author: str = "") -> List[Dict]:
-        """Search ThriftBooks by title and author"""
+        """Search BookDepository by title and author"""
         query = f"{title} {author}".strip()
-        return self.search_thriftbooks(query)
+        return self.search_bookdepository(query)
 
-    def save_to_excel(self, data: List[Dict], filename: str = "thriftbooks_books.xlsx") -> None:
+    def save_to_excel(self, data: List[Dict], filename: str = "bookdepository_books.xlsx") -> None:
         """Save book data to Excel"""
         if not data:
             logger.warning("No data to save")
             return
         
         df = pd.DataFrame(data)
-        #df["Date_Scraped"] = pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')
         
         try:
             df.to_excel(filename, index=False)
@@ -621,14 +700,13 @@ class ThriftBooksBookScraper:
         except Exception as e:
             logger.error(f"Error saving to Excel: {str(e)}")
 
-    def save_to_csv(self, data: List[Dict], filename: str = "thriftbooks_books.csv") -> None:
+    def save_to_csv(self, data: List[Dict], filename: str = "bookdepository_books.csv") -> None:
         """Save book data to CSV"""
         if not data:
             logger.warning("No data to save")
             return
         
         df = pd.DataFrame(data)
-        #df["Date_Scraped"] = pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')
         
         try:
             df.to_csv(filename, index=False)
@@ -645,9 +723,9 @@ class ThriftBooksBookScraper:
                 pass
 
 
-"""# Example usage
+# Example usage
 if __name__ == "__main__":
-    scraper = ThriftBooksBookScraper()
+    scraper = BookDepositoryBookScraper()
     
     # Example searches
     search_queries = [
@@ -658,7 +736,7 @@ if __name__ == "__main__":
     
     for query in search_queries:
         print(f"\nSearching for: {query}")
-        results = scraper.search_thriftbooks(query, max_results=1)
+        results = scraper.search_bookdepository(query, max_results=5)
         all_results.extend(results)
         
         # Add delay between searches
@@ -672,4 +750,4 @@ if __name__ == "__main__":
         print("No results found!")
     
     # Clean up
-    del scraper"""
+    del scraper
