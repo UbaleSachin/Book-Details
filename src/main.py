@@ -1,6 +1,10 @@
-from flask import Flask, request, jsonify, render_template, send_from_directory
+from flask import Flask, request, jsonify, render_template, send_from_directory, send_file
 from flask_cors import CORS
 import os
+import sys
+import atexit
+import pandas as pd
+import tempfile
 from datetime import datetime
 import logging
 from src.book_sites.open_library import BookScraper
@@ -166,7 +170,7 @@ def get_search_history():
 
 @app.route('/api/export', methods=['POST'])
 def export_results():
-    """Export search results to Excel"""
+    """Export search results to Excel and return as downloadable file"""
     try:
         data = request.get_json()
         results = data.get('results', [])
@@ -177,27 +181,77 @@ def export_results():
                 'message': 'No results to export'
             }), 400
         
-        # Convert frontend format back to scraper format
-        scraper_format_results = []
+        # Convert frontend format to DataFrame-ready format
+        excel_data = []
         for result in results:
-            scraper_format_results.append({
-                'Title': result.get('title'),
-                'Author': result.get('author'),
-                'ISBN': result.get('isbn'),
-                'Price': result.get('price'),
-                'Publisher': result.get('publisher'),
-                'Publish Date': result.get('publish_date'),
-                'Book URL': result.get('url')
-
+            excel_data.append({
+                'Title': result.get('title', 'N/A'),
+                'Author': result.get('author', 'N/A'),
+                'ISBN': result.get('isbn', 'N/A'),
+                'Price': result.get('price', 'N/A'),
+                'Format': result.get('format', 'N/A'),
+                'Publisher': result.get('publisher', 'N/A'),
+                'Publish Date': result.get('publish_date', 'N/A'),
+                'Platform': result.get('site', 'N/A'),
+                'Book URL': result.get('url', 'N/A'),
+                'Subjects': ', '.join(result.get('subjects', [])) if isinstance(result.get('subjects'), list) else result.get('subjects', 'N/A')
             })
         
-        filename = scraper.save_to_excel(scraper_format_results)
+        # Create DataFrame
+        df = pd.DataFrame(excel_data)
         
-        return jsonify({
-            'success': True,
-            'message': f'Results exported to {filename}',
-            'filename': filename
-        })
+        # Generate filename with timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f'book_search_results_{timestamp}.xlsx'
+        
+        # Create temporary file
+        temp_dir = tempfile.gettempdir()
+        temp_file_path = os.path.join(temp_dir, filename)
+        
+        # Create Excel file with formatting
+        with pd.ExcelWriter(temp_file_path, engine='openpyxl') as writer:
+            df.to_excel(writer, sheet_name='Book Search Results', index=False)
+            
+            # Get the workbook and worksheet
+            workbook = writer.book
+            worksheet = writer.sheets['Book Search Results']
+            
+            # Auto-adjust column widths
+            for column in worksheet.columns:
+                max_length = 0
+                column_letter = column[0].column_letter
+                
+                for cell in column:
+                    try:
+                        if len(str(cell.value)) > max_length:
+                            max_length = len(str(cell.value))
+                    except:
+                        pass
+                
+                adjusted_width = min(max_length + 2, 50)  # Cap at 50 characters
+                worksheet.column_dimensions[column_letter].width = adjusted_width
+            
+            # Add header formatting
+            from openpyxl.styles import Font, PatternFill, Alignment
+            
+            header_font = Font(bold=True, color="FFFFFF")
+            header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+            header_alignment = Alignment(horizontal="center", vertical="center")
+            
+            for cell in worksheet[1]:
+                cell.font = header_font
+                cell.fill = header_fill
+                cell.alignment = header_alignment
+        
+        logger.info(f"Excel file created: {temp_file_path}")
+        
+        # Return the file as download
+        return send_file(
+            temp_file_path,
+            as_attachment=True,
+            download_name=filename,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
         
     except Exception as e:
         logger.error(f"Export error: {str(e)}")
@@ -205,6 +259,191 @@ def export_results():
             'success': False,
             'message': f'Export failed: {str(e)}'
         }), 500
+
+# Alternative version if you want to clean up temp files after sending
+@app.route('/api/export-with-cleanup', methods=['POST'])
+def export_results_with_cleanup():
+    """Export search results to Excel with automatic cleanup"""
+    temp_file_path = None
+    try:
+        data = request.get_json()
+        results = data.get('results', [])
+        
+        if not results:
+            return jsonify({
+                'success': False,
+                'message': 'No results to export'
+            }), 400
+        
+        # Convert frontend format to DataFrame-ready format
+        excel_data = []
+        for result in results:
+            # Handle subjects field (could be list or string)
+            subjects = result.get('subjects', [])
+            if isinstance(subjects, list):
+                subjects_str = ', '.join(subjects[:5])  # Limit to first 5 subjects
+            else:
+                subjects_str = str(subjects) if subjects else 'N/A'
+            
+            excel_data.append({
+                'Title': result.get('title', 'N/A'),
+                'Author': result.get('author', 'N/A'),
+                'ISBN': result.get('isbn', 'N/A'),
+                'Price': result.get('price', 'N/A'),
+                'Format': result.get('format', 'N/A'),
+                'Publisher': result.get('publisher', 'N/A'),
+                'Publish Date': result.get('publish_date', 'N/A'),
+                'Platform': result.get('site', 'N/A'),
+                'Book URL': result.get('url', 'N/A'),
+                'Subjects': subjects_str
+            })
+        
+        # Create DataFrame
+        df = pd.DataFrame(excel_data)
+        
+        # Generate filename with timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f'book_search_results_{timestamp}.xlsx'
+        
+        # Create temporary file
+        temp_file_path = tempfile.NamedTemporaryFile(
+            delete=False, 
+            suffix='.xlsx', 
+            prefix='book_export_'
+        ).name
+        
+        # Save to Excel with enhanced formatting
+        create_formatted_excel(df, temp_file_path)
+        
+        logger.info(f"Excel file created: {temp_file_path}")
+        
+        # Custom response function to clean up after sending
+        def remove_file(response):
+            try:
+                os.unlink(temp_file_path)
+                logger.info(f"Temporary file removed: {temp_file_path}")
+            except Exception as e:
+                logger.warning(f"Could not remove temporary file {temp_file_path}: {e}")
+            return response
+        
+        # Send file and register cleanup
+        try:
+            response = send_file(
+                temp_file_path,
+                as_attachment=True,
+                download_name=filename,
+                mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            )
+            response.call_on_close(lambda: remove_file(None))
+            return response
+        except Exception as e:
+            # If send_file fails, clean up immediately
+            if os.path.exists(temp_file_path):
+                os.unlink(temp_file_path)
+            raise e
+        
+    except Exception as e:
+        # Clean up on error
+        if temp_file_path and os.path.exists(temp_file_path):
+            try:
+                os.unlink(temp_file_path)
+            except:
+                pass
+        
+        logger.error(f"Export error: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': f'Export failed: {str(e)}'
+        }), 500
+
+def create_formatted_excel(df, file_path):
+    """Create a formatted Excel file from DataFrame"""
+    with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
+        df.to_excel(writer, sheet_name='Book Search Results', index=False)
+        
+        # Get the workbook and worksheet
+        workbook = writer.book
+        worksheet = writer.sheets['Book Search Results']
+        
+        # Import styling modules
+        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+        from openpyxl.utils import get_column_letter
+        
+        # Define styles
+        header_font = Font(bold=True, color="FFFFFF", size=12)
+        header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+        header_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        
+        cell_alignment = Alignment(vertical="top", wrap_text=True)
+        thin_border = Border(
+            left=Side(style='thin'),
+            right=Side(style='thin'),
+            top=Side(style='thin'),
+            bottom=Side(style='thin')
+        )
+        
+        # Apply header formatting
+        for cell in worksheet[1]:
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = header_alignment
+            cell.border = thin_border
+        
+        # Apply cell formatting and auto-adjust column widths
+        for col_num, column in enumerate(worksheet.columns, 1):
+            column_letter = get_column_letter(col_num)
+            max_length = 0
+            
+            # Calculate max length for column width
+            for cell in column:
+                try:
+                    cell.alignment = cell_alignment
+                    cell.border = thin_border
+                    
+                    if cell.row > 1:  # Skip header row for length calculation
+                        cell_length = len(str(cell.value))
+                        if cell_length > max_length:
+                            max_length = cell_length
+                except:
+                    pass
+            
+            # Set column width (with reasonable limits)
+            if max_length > 0:
+                adjusted_width = min(max(max_length + 2, 10), 50)
+                worksheet.column_dimensions[column_letter].width = adjusted_width
+            else:
+                worksheet.column_dimensions[column_letter].width = 15
+        
+        # Set row height for better readability
+        for row in worksheet.iter_rows():
+            worksheet.row_dimensions[row[0].row].height = 20
+        
+        # Freeze the header row
+        worksheet.freeze_panes = 'A2'
+        
+        # Add filters to header row
+        worksheet.auto_filter.ref = worksheet.dimensions
+
+# Clean up old temporary files (call this periodically)
+def cleanup_old_temp_files():
+    """Clean up old temporary export files"""
+    try:
+        temp_dir = tempfile.gettempdir()
+        current_time = datetime.now()
+        
+        for filename in os.listdir(temp_dir):
+            if filename.startswith('book_export_') and filename.endswith('.xlsx'):
+                file_path = os.path.join(temp_dir, filename)
+                try:
+                    # Remove files older than 1 hour
+                    file_time = datetime.fromtimestamp(os.path.getctime(file_path))
+                    if (current_time - file_time).seconds > 3600:
+                        os.unlink(file_path)
+                        logger.info(f"Cleaned up old temp file: {file_path}")
+                except Exception as e:
+                    logger.warning(f"Could not clean up temp file {file_path}: {e}")
+    except Exception as e:
+        logger.warning(f"Error during temp file cleanup: {e}")
 
 @app.errorhandler(404)
 def not_found(error):
@@ -240,4 +479,5 @@ def main():
     app.run(host='0.0.0.0', port=port, debug=True)
 
 if __name__ == "__main__":
+    atexit.register(cleanup_old_temp_files)
     main()
