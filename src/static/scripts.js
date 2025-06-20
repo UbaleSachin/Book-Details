@@ -236,26 +236,80 @@ function showActualResults(apiResult) {
 
 async function exportResults(books) {
     try {
+        // Show loading state on export button
+        const exportBtn = document.querySelector('.export-btn');
+        const originalText = exportBtn.textContent;
+        exportBtn.textContent = '⏳ Exporting...';
+        exportBtn.disabled = true;
+        
         const response = await fetch('/api/export', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ results: books })
         });
         
-        const result = await response.json();
-        
-        if (result.success) {
-            showSuccess(`Results exported successfully! File: ${result.filename}`);
-        } else {
-            showError(result.message || 'Export failed');
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
         }
+        
+        // Check if the response is a file download
+        const contentType = response.headers.get('content-type');
+        
+        if (contentType && contentType.includes('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')) {
+            // Handle file download
+            const blob = await response.blob();
+            const filename = response.headers.get('content-disposition')?.match(/filename="?(.+)"?/)?.[1] || 'book_search_results.xlsx';
+            
+            // Create download link and trigger download
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+            
+            showSuccess(`Results exported successfully! File downloaded: ${filename}`);
+        } else {
+            // Handle JSON response (for backward compatibility)
+            const result = await response.json();
+            
+            if (result.success) {
+                if (result.downloadUrl) {
+                    // If backend provides a download URL
+                    const a = document.createElement('a');
+                    a.href = result.downloadUrl;
+                    a.download = result.filename || 'book_search_results.xlsx';
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    
+                    showSuccess(`Results exported successfully! File downloaded: ${result.filename}`);
+                } else {
+                    showSuccess(`Results exported successfully! File: ${result.filename}`);
+                }
+            } else {
+                throw new Error(result.message || 'Export failed');
+            }
+        }
+        
+        // Reset button
+        exportBtn.textContent = originalText;
+        exportBtn.disabled = false;
         
     } catch (error) {
         console.error('Export error:', error);
         showError('Failed to export results. Please try again.');
+        
+        // Reset button on error
+        const exportBtn = document.querySelector('.export-btn');
+        if (exportBtn) {
+            exportBtn.textContent = '📊 Export to Excel';
+            exportBtn.disabled = false;
+        }
     }
 }
-
 
 function selectResult(resultId) {
     showSuccess(`Selected book with ID: ${resultId}. Redirecting to purchase page...`);
