@@ -15,3 +15,6 @@ openpyxl
 
 flask 
 flask-cors
+
+werkzeug
+gunicorn
